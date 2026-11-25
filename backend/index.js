@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
+const quizRoutes = require('./routes/quizRoutes');
 require('dotenv').config();
 
 const app = express();
@@ -8,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+app.use('/api/quizzes', quizRoutes);
 
 // проверка
 app.get('/api/health', (req, res) => {
