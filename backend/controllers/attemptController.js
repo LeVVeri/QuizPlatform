@@ -122,6 +122,8 @@ const getAttemptQuestions = async (req, res) => {
 
 // Сохранить ответ участника
 const submitAnswer = async (req, res) => {
+    let client;
+
     try {
         const { attemptId } = req.params;
         const { questionId, answerId } = req.body;
@@ -133,15 +135,21 @@ const submitAnswer = async (req, res) => {
             });
         }
 
-        // Проверяем принадлежность и состояние попытки
-        const attemptResult = await pool.query(
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Блокируем попытку до завершения транзакции
+        const attemptResult = await client.query(
             `SELECT id, quiz_id, expires_at, status
              FROM attempts
-             WHERE id = $1 AND user_id = $2`,
+             WHERE id = $1 AND user_id = $2
+             FOR UPDATE`,
             [attemptId, userId]
         );
 
         if (attemptResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+
             return res.status(404).json({
                 message: 'Попытка не найдена'
             });
@@ -151,14 +159,15 @@ const submitAnswer = async (req, res) => {
 
         if (attempt.status !== 'in_progress' ||
             new Date(attempt.expires_at) <= new Date()) {
+            await client.query('ROLLBACK');
+
             return res.status(400).json({
                 message: 'Попытка завершена или время истекло'
             });
         }
 
-        // Проверяем, что вопрос относится к квизу,
-        // а вариант ответа — к этому вопросу
-        const answerCheck = await pool.query(
+        // Проверяем принадлежность вопроса и варианта ответа
+        const answerCheck = await client.query(
             `SELECT ao.id
              FROM answer_options ao
              JOIN questions q ON q.id = ao.question_id
@@ -169,13 +178,15 @@ const submitAnswer = async (req, res) => {
         );
 
         if (answerCheck.rows.length === 0) {
+            await client.query('ROLLBACK');
+
             return res.status(400).json({
                 message: 'Неверный вариант ответа для этого вопроса'
             });
         }
 
         // Сохраняем ответ или обновляем предыдущий
-        const result = await pool.query(
+        const result = await client.query(
             `INSERT INTO attempt_answers
                 (attempt_id, question_id, selected_option_id, answered_at)
              VALUES ($1, $2, $3, NOW())
@@ -188,33 +199,52 @@ const submitAnswer = async (req, res) => {
             [attemptId, questionId, answerId]
         );
 
+        await client.query('COMMIT');
+
         res.status(201).json({
             message: 'Ответ сохранён',
             answer: result.rows[0]
         });
     } catch (error) {
+        if (client) {
+            await client.query('ROLLBACK');
+        }
+
         console.error('Ошибка сохранения ответа:', error.message);
 
         res.status(500).json({
             message: 'Не удалось сохранить ответ'
         });
+    } finally {
+        if (client) {
+            client.release();
+        }
     }
 };
 
 // Завершить попытку и подсчитать результат
 const finishAttempt = async (req, res) => {
+    let client;
+
     try {
         const { attemptId } = req.params;
         const userId = req.user.id;
 
-        const attemptResult = await pool.query(
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Блокируем попытку до завершения транзакции
+        const attemptResult = await client.query(
             `SELECT id, quiz_id, expires_at, status
              FROM attempts
-             WHERE id = $1 AND user_id = $2`,
+             WHERE id = $1 AND user_id = $2
+             FOR UPDATE`,
             [attemptId, userId]
         );
 
         if (attemptResult.rows.length === 0) {
+            await client.query('ROLLBACK');
+
             return res.status(404).json({
                 message: 'Попытка не найдена'
             });
@@ -223,19 +253,30 @@ const finishAttempt = async (req, res) => {
         const attempt = attemptResult.rows[0];
 
         if (attempt.status !== 'in_progress') {
+            await client.query('ROLLBACK');
+
             return res.status(400).json({
                 message: 'Попытка уже завершена'
             });
         }
 
         if (new Date(attempt.expires_at) <= new Date()) {
+            await client.query(
+                `UPDATE attempts
+                 SET status = 'expired'
+                 WHERE id = $1`,
+                [attemptId]
+            );
+
+            await client.query('COMMIT');
+
             return res.status(400).json({
                 message: 'Время попытки истекло'
             });
         }
 
         // Подсчитываем баллы за правильные ответы
-        const scoreResult = await pool.query(
+        const scoreResult = await client.query(
             `SELECT COALESCE(SUM(q.points), 0) AS score
              FROM attempt_answers aa
              JOIN questions q ON q.id = aa.question_id
@@ -250,7 +291,7 @@ const finishAttempt = async (req, res) => {
         const score = Number(scoreResult.rows[0].score);
 
         // Сохраняем результат
-        const result = await pool.query(
+        const result = await client.query(
             `UPDATE attempts
              SET score = $1,
                  status = 'completed',
@@ -260,16 +301,26 @@ const finishAttempt = async (req, res) => {
             [score, attemptId]
         );
 
+        await client.query('COMMIT');
+
         res.json({
             message: 'Попытка успешно завершена',
             result: result.rows[0]
         });
     } catch (error) {
+        if (client) {
+            await client.query('ROLLBACK');
+        }
+
         console.error('Ошибка завершения попытки:', error.message);
 
         res.status(500).json({
             message: 'Не удалось завершить попытку'
         });
+    } finally {
+        if (client) {
+            client.release();
+        }
     }
 };
 

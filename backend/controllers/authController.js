@@ -7,8 +7,12 @@ const register = async (req, res) => {
     try {
         const { username, email, password } = req.body;
 
-        if (!username || !email || !password ||
-            !username.trim() || !email.trim() || password.length < 8) {
+        if (typeof username !== 'string' ||
+            typeof email !== 'string' ||
+            typeof password !== 'string' ||
+            !username.trim() ||
+            !email.trim() ||
+            password.length < 8) {
             return res.status(400).json({
                 message: 'Проверьте правильность заполнения полей'
             });
@@ -47,7 +51,10 @@ const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) {
+        if (typeof email !== 'string' ||
+            typeof password !== 'string' ||
+            !email.trim() ||
+            !password) {
             return res.status(400).json({
                 message: 'Введите email и пароль'
             });

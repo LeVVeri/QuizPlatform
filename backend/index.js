@@ -5,44 +5,20 @@ const quizRoutes = require('./routes/quizRoutes');
 const authRoutes = require('./routes/authRoutes');
 const attemptRoutes = require('./routes/attemptRoutes');
 require('dotenv').config();
+if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET не задан в файле .env');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+    origin: 'http://localhost:5173'
+}));
 app.use(express.json());
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/attempts', attemptRoutes);
-
-// проверка
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        message: 'QuizPlatform API is running'
-    });
-});
-
-
-app.get('/api/db-test', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT NOW()');
-
-        res.json({
-            status: 'ok',
-            databaseTime: new Date(result.rows[0].now).toLocaleString('ru-RU', {
-                timeZone: 'Europe/Moscow'
-            })
-        });
-    } catch (error) {
-        console.error('Database connection error:', error.message);
-
-        res.status(500).json({
-            status: 'error',
-            message: 'Не удалось подключиться к базе данных'
-        });
-    }
-});
 
 // старт сервера
 app.listen(PORT, () => {

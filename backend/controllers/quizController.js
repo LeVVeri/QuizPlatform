@@ -26,7 +26,7 @@ const createQuiz = async (req, res) => {
         const { title, description, time_limit_seconds } = req.body;
         const creator_id = req.user.id;
 
-        if (!title || !title.trim() ||
+        if (typeof title !== 'string' || !title.trim() ||
             !Number.isInteger(time_limit_seconds) || time_limit_seconds <= 0) {
             return res.status(400).json({
                 message: 'Проверьте правильность заполнения полей'
@@ -57,12 +57,44 @@ const updateQuiz = async (req, res) => {
         const { title, description, time_limit_seconds, status } = req.body;
         const creator_id = req.user.id;
 
-        if (!title || !title.trim() ||
+        if (typeof title !== 'string' || !title.trim() ||
             !Number.isInteger(time_limit_seconds) || time_limit_seconds <= 0 ||
             !['draft', 'published', 'archived'].includes(status)) {
             return res.status(400).json({
                 message: 'Проверьте правильность заполнения полей'
             });
+        }
+
+        // Проверяем содержимое перед публикацией
+        if (status === 'published') {
+            const validation = await pool.query(
+                `SELECT
+                    COUNT(DISTINCT q.id) AS question_count,
+                    COUNT(DISTINCT CASE WHEN ao.is_correct = TRUE
+                        THEN q.id END) AS questions_with_correct_answers
+                 FROM quizzes quiz
+                 LEFT JOIN questions q ON q.quiz_id = quiz.id
+                 LEFT JOIN answer_options ao ON ao.question_id = q.id
+                 WHERE quiz.id = $1 AND quiz.creator_id = $2
+                 GROUP BY quiz.id`,
+                [quizId, creator_id]
+            );
+
+            if (validation.rows.length === 0) {
+                return res.status(404).json({
+                    message: 'Квиз не найден или у вас нет прав'
+                });
+            }
+
+            const { question_count, questions_with_correct_answers } =
+                validation.rows[0];
+
+            if (Number(question_count) === 0 ||
+                Number(question_count) !== Number(questions_with_correct_answers)) {
+                return res.status(400).json({
+                    message: 'Для публикации добавьте вопросы и хотя бы один правильный ответ к каждому вопросу'
+                });
+            }
         }
 
         const result = await pool.query(
@@ -71,7 +103,9 @@ const updateQuiz = async (req, res) => {
                  description = $2,
                  time_limit_seconds = $3,
                  status = $4
-             WHERE id = $5 AND creator_id = $6
+             WHERE id = $5
+               AND creator_id = $6
+               AND status = 'draft'
              RETURNING *`,
             [title.trim(), description || null, time_limit_seconds, status, quizId, creator_id]
         );

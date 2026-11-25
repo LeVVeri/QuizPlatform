@@ -6,10 +6,13 @@ const getAnswers = async (req, res) => {
         const { questionId } = req.params;
 
         const result = await pool.query(
-            `SELECT id, question_id, text, position
-             FROM answer_options
-             WHERE question_id = $1
-             ORDER BY position`,
+            `SELECT ao.id, ao.question_id, ao.text, ao.position
+             FROM answer_options ao
+             JOIN questions q ON q.id = ao.question_id
+             JOIN quizzes quiz ON quiz.id = q.quiz_id
+             WHERE q.id = $1
+               AND quiz.status = 'published'
+             ORDER BY ao.position`,
             [questionId]
         );
 
@@ -42,7 +45,9 @@ const createAnswer = async (req, res) => {
              SELECT questions.id, $2, $3, $4
              FROM questions
              JOIN quizzes ON quizzes.id = questions.quiz_id
-             WHERE questions.id = $1 AND quizzes.creator_id = $5
+             WHERE questions.id = $1
+               AND quizzes.creator_id = $5
+               AND quizzes.status = 'draft'
              RETURNING id, question_id, text, is_correct, position`,
             [questionId, text.trim(), is_correct, position, req.user.id]
         );
@@ -77,6 +82,7 @@ const deleteAnswer = async (req, res) => {
                    JOIN quizzes ON quizzes.id = questions.quiz_id
                    WHERE questions.id = answer_options.question_id
                      AND quizzes.creator_id = $2
+                     AND quizzes.status = 'draft'
                )
              RETURNING id`,
             [answerId, req.user.id]
@@ -124,6 +130,7 @@ const updateAnswer = async (req, res) => {
                    JOIN quizzes ON quizzes.id = questions.quiz_id
                    WHERE questions.id = answer_options.question_id
                      AND quizzes.creator_id = $5
+                     AND quizzes.status = 'draft'
                )
              RETURNING id, question_id, text, is_correct, position`,
             [text.trim(), is_correct, position, answerId, req.user.id]

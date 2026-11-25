@@ -6,11 +6,16 @@ const getQuestions = async (req, res) => {
         const { quizId } = req.params;
 
         const result = await pool.query(
-            `SELECT id, quiz_id, text, points, position
+            `SELECT questions.id, questions.quiz_id, questions.text, questions.points, questions.position
              FROM questions
-             WHERE quiz_id = $1
-             ORDER BY position`,
-            [quizId]
+             JOIN quizzes ON quizzes.id = questions.quiz_id
+             WHERE questions.quiz_id = $1
+             AND (
+                 quizzes.status = 'published'
+                 OR quizzes.creator_id = $2
+             )
+             ORDER BY questions.position`,
+            [quizId, req.user?.id ?? null]
         );
 
         res.json(result.rows);
@@ -29,7 +34,7 @@ const createQuestion = async (req, res) => {
         const { quizId } = req.params;
         const { text, points, position } = req.body;
 
-        if (!text || !text.trim() ||
+        if (typeof text !== 'string' || !text.trim() ||
             !Number.isInteger(points) || points <= 0 ||
             !Number.isInteger(position) || position <= 0) {
             return res.status(400).json({
@@ -41,7 +46,9 @@ const createQuestion = async (req, res) => {
             `INSERT INTO questions (quiz_id, text, points, position)
              SELECT id, $2, $3, $4
              FROM quizzes
-             WHERE id = $1 AND creator_id = $5
+             WHERE id = $1
+                 AND creator_id = $5
+                 AND status = 'draft'
              RETURNING *`,
             [quizId, text.trim(), points, position, req.user.id]
         );
@@ -68,7 +75,7 @@ const updateQuestion = async (req, res) => {
         const { questionId } = req.params;
         const { text, points, position } = req.body;
 
-        if (!text || !text.trim() ||
+        if (typeof text !== 'string' || !text.trim() ||
             !Number.isInteger(points) || points <= 0 ||
             !Number.isInteger(position) || position <= 0) {
             return res.status(400).json({
@@ -84,6 +91,7 @@ const updateQuestion = async (req, res) => {
                    SELECT 1 FROM quizzes
                    WHERE quizzes.id = questions.quiz_id
                      AND quizzes.creator_id = $5
+                     AND quizzes.status = 'draft'
                )
              RETURNING *`,
             [text.trim(), points, position, questionId, req.user.id]
@@ -117,6 +125,7 @@ const deleteQuestion = async (req, res) => {
                    SELECT 1 FROM quizzes
                    WHERE quizzes.id = questions.quiz_id
                      AND quizzes.creator_id = $2
+                     AND quizzes.status = 'draft'
                )
              RETURNING id`,
             [questionId, req.user.id]
