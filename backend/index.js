@@ -3,6 +3,7 @@ const cors = require('cors');
 const pool = require('./db');
 const quizRoutes = require('./routes/quizRoutes');
 const authRoutes = require('./routes/authRoutes');
+const attemptRoutes = require('./routes/attemptRoutes');
 require('dotenv').config();
 
 const app = express();
@@ -12,6 +13,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/quizzes', quizRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/attempts', attemptRoutes);
 
 // проверка
 app.get('/api/health', (req, res) => {

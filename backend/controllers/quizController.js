@@ -21,7 +21,6 @@ const getQuizzes = async (req, res) => {
 };
 
 // Создать квиз
-// Создать квиз
 const createQuiz = async (req, res) => {
     try {
         const { title, description, time_limit_seconds } = req.body;
