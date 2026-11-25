@@ -39,19 +39,21 @@ const createQuestion = async (req, res) => {
 
         const result = await pool.query(
             `INSERT INTO questions (quiz_id, text, points, position)
-             VALUES ($1, $2, $3, $4)
+             SELECT id, $2, $3, $4
+             FROM quizzes
+             WHERE id = $1 AND creator_id = $5
              RETURNING *`,
-            [quizId, text.trim(), points, position]
+            [quizId, text.trim(), points, position, req.user.id]
         );
 
-        res.status(201).json(result.rows[0]);
-    } catch (error) {
-        if (error.code === '23503') {
+        if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Квиз не найден'
+                message: 'Квиз не найден или у вас нет прав'
             });
         }
 
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
         console.error('Ошибка создания вопроса:', error.message);
 
         res.status(500).json({
@@ -78,13 +80,18 @@ const updateQuestion = async (req, res) => {
             `UPDATE questions
              SET text = $1, points = $2, position = $3
              WHERE id = $4
+               AND EXISTS (
+                   SELECT 1 FROM quizzes
+                   WHERE quizzes.id = questions.quiz_id
+                     AND quizzes.creator_id = $5
+               )
              RETURNING *`,
-            [text.trim(), points, position, questionId]
+            [text.trim(), points, position, questionId, req.user.id]
         );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Вопрос не найден'
+                message: 'Вопрос не найден или у вас нет прав'
             });
         }
 
@@ -106,13 +113,18 @@ const deleteQuestion = async (req, res) => {
         const result = await pool.query(
             `DELETE FROM questions
              WHERE id = $1
+               AND EXISTS (
+                   SELECT 1 FROM quizzes
+                   WHERE quizzes.id = questions.quiz_id
+                     AND quizzes.creator_id = $2
+               )
              RETURNING id`,
-            [questionId]
+            [questionId, req.user.id]
         );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Вопрос не найден'
+                message: 'Вопрос не найден или у вас нет прав'
             });
         }
 
@@ -120,6 +132,12 @@ const deleteQuestion = async (req, res) => {
             message: 'Вопрос успешно удалён'
         });
     } catch (error) {
+        if (error.code === '23503') {
+            return res.status(409).json({
+                message: 'Нельзя удалить вопрос, связанный с попытками прохождения'
+            });
+        }
+
         console.error('Ошибка удаления вопроса:', error.message);
 
         res.status(500).json({

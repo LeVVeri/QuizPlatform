@@ -21,12 +21,13 @@ const getQuizzes = async (req, res) => {
 };
 
 // Создать квиз
+// Создать квиз
 const createQuiz = async (req, res) => {
     try {
-        const { creator_id, title, description, time_limit_seconds } = req.body;
+        const { title, description, time_limit_seconds } = req.body;
+        const creator_id = req.user.id;
 
-        if (!Number.isInteger(creator_id) || creator_id <= 0 ||
-            !title || !title.trim() ||
+        if (!title || !title.trim() ||
             !Number.isInteger(time_limit_seconds) || time_limit_seconds <= 0) {
             return res.status(400).json({
                 message: 'Проверьте правильность заполнения полей'
@@ -42,12 +43,6 @@ const createQuiz = async (req, res) => {
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
-        if (error.code === '23503') {
-            return res.status(404).json({
-                message: 'Пользователь не найден'
-            });
-        }
-
         console.error('Ошибка создания квиза:', error.message);
 
         res.status(500).json({
@@ -61,6 +56,7 @@ const updateQuiz = async (req, res) => {
     try {
         const { quizId } = req.params;
         const { title, description, time_limit_seconds, status } = req.body;
+        const creator_id = req.user.id;
 
         if (!title || !title.trim() ||
             !Number.isInteger(time_limit_seconds) || time_limit_seconds <= 0 ||
@@ -76,14 +72,14 @@ const updateQuiz = async (req, res) => {
                  description = $2,
                  time_limit_seconds = $3,
                  status = $4
-             WHERE id = $5
+             WHERE id = $5 AND creator_id = $6
              RETURNING *`,
-            [title.trim(), description || null, time_limit_seconds, status, quizId]
+            [title.trim(), description || null, time_limit_seconds, status, quizId, creator_id]
         );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Квиз не найден'
+                message: 'Квиз не найден или у вас нет прав на его редактирование'
             });
         }
 
@@ -101,17 +97,18 @@ const updateQuiz = async (req, res) => {
 const deleteQuiz = async (req, res) => {
     try {
         const { quizId } = req.params;
+        const creator_id = req.user.id;
 
         const result = await pool.query(
             `DELETE FROM quizzes
-             WHERE id = $1
+             WHERE id = $1 AND creator_id = $2
              RETURNING id`,
-            [quizId]
+            [quizId, creator_id]
         );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Квиз не найден'
+                message: 'Квиз не найден или у вас нет прав на его удаление'
             });
         }
 
@@ -119,6 +116,12 @@ const deleteQuiz = async (req, res) => {
             message: 'Квиз успешно удалён'
         });
     } catch (error) {
+        if (error.code === '23503') {
+            return res.status(409).json({
+                message: 'Нельзя удалить квиз, по которому уже есть попытки прохождения'
+            });
+        }
+
         console.error('Ошибка удаления квиза:', error.message);
 
         res.status(500).json({

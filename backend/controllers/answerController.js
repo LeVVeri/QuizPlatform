@@ -29,7 +29,8 @@ const createAnswer = async (req, res) => {
         const { questionId } = req.params;
         const { text, is_correct, position } = req.body;
 
-        if (!text || !text.trim() || typeof is_correct !== 'boolean' ||
+        if (typeof text !== 'string' || !text.trim() ||
+            typeof is_correct !== 'boolean' ||
             !Number.isInteger(position) || position <= 0) {
             return res.status(400).json({
                 message: 'Проверьте правильность заполнения полей'
@@ -38,19 +39,22 @@ const createAnswer = async (req, res) => {
 
         const result = await pool.query(
             `INSERT INTO answer_options (question_id, text, is_correct, position)
-             VALUES ($1, $2, $3, $4)
+             SELECT questions.id, $2, $3, $4
+             FROM questions
+             JOIN quizzes ON quizzes.id = questions.quiz_id
+             WHERE questions.id = $1 AND quizzes.creator_id = $5
              RETURNING id, question_id, text, is_correct, position`,
-            [questionId, text.trim(), is_correct, position]
+            [questionId, text.trim(), is_correct, position, req.user.id]
         );
 
-        res.status(201).json(result.rows[0]);
-    } catch (error) {
-        if (error.code === '23503') {
+        if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Вопрос не найден'
+                message: 'Вопрос не найден или у вас нет прав'
             });
         }
 
+        res.status(201).json(result.rows[0]);
+    } catch (error) {
         console.error('Ошибка создания варианта ответа:', error.message);
 
         res.status(500).json({
@@ -67,13 +71,20 @@ const deleteAnswer = async (req, res) => {
         const result = await pool.query(
             `DELETE FROM answer_options
              WHERE id = $1
+               AND EXISTS (
+                   SELECT 1
+                   FROM questions
+                   JOIN quizzes ON quizzes.id = questions.quiz_id
+                   WHERE questions.id = answer_options.question_id
+                     AND quizzes.creator_id = $2
+               )
              RETURNING id`,
-            [answerId]
+            [answerId, req.user.id]
         );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Вариант ответа не найден'
+                message: 'Вариант ответа не найден или у вас нет прав'
             });
         }
 
@@ -95,7 +106,8 @@ const updateAnswer = async (req, res) => {
         const { answerId } = req.params;
         const { text, is_correct, position } = req.body;
 
-        if (!text || !text.trim() || typeof is_correct !== 'boolean' ||
+        if (typeof text !== 'string' || !text.trim() ||
+            typeof is_correct !== 'boolean' ||
             !Number.isInteger(position) || position <= 0) {
             return res.status(400).json({
                 message: 'Проверьте правильность заполнения полей'
@@ -106,13 +118,20 @@ const updateAnswer = async (req, res) => {
             `UPDATE answer_options
              SET text = $1, is_correct = $2, position = $3
              WHERE id = $4
+               AND EXISTS (
+                   SELECT 1
+                   FROM questions
+                   JOIN quizzes ON quizzes.id = questions.quiz_id
+                   WHERE questions.id = answer_options.question_id
+                     AND quizzes.creator_id = $5
+               )
              RETURNING id, question_id, text, is_correct, position`,
-            [text.trim(), is_correct, position, answerId]
+            [text.trim(), is_correct, position, answerId, req.user.id]
         );
 
         if (result.rows.length === 0) {
             return res.status(404).json({
-                message: 'Вариант ответа не найден'
+                message: 'Вариант ответа не найден или у вас нет прав'
             });
         }
 
