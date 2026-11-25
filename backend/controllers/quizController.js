@@ -1,6 +1,6 @@
 const pool = require('../db');
 
-// Получить список квизов
+// Получить список опубликованных квизов
 const getQuizzes = async (req, res) => {
     try {
         const result = await pool.query(`
@@ -20,13 +20,16 @@ const getQuizzes = async (req, res) => {
     }
 };
 
+// Создать квиз
 const createQuiz = async (req, res) => {
     try {
         const { creator_id, title, description, time_limit_seconds } = req.body;
 
-        if (!creator_id || !title || !time_limit_seconds || time_limit_seconds <= 0) {
+        if (!Number.isInteger(creator_id) || creator_id <= 0 ||
+            !title || !title.trim() ||
+            !Number.isInteger(time_limit_seconds) || time_limit_seconds <= 0) {
             return res.status(400).json({
-                message: 'Заполните обязательные поля'
+                message: 'Проверьте правильность заполнения полей'
             });
         }
 
@@ -34,21 +37,99 @@ const createQuiz = async (req, res) => {
             `INSERT INTO quizzes (creator_id, title, description, time_limit_seconds)
              VALUES ($1, $2, $3, $4)
              RETURNING *`,
-            [creator_id, title, description || null, time_limit_seconds]
+            [creator_id, title.trim(), description || null, time_limit_seconds]
         );
 
         res.status(201).json(result.rows[0]);
-
     } catch (error) {
-    console.error('Ошибка создания квиза:', error.message);
+        if (error.code === '23503') {
+            return res.status(404).json({
+                message: 'Пользователь не найден'
+            });
+        }
 
-    res.status(500).json({
-        message: 'Не удалось создать квиз'
-    });
+        console.error('Ошибка создания квиза:', error.message);
+
+        res.status(500).json({
+            message: 'Не удалось создать квиз'
+        });
+    }
+};
+
+// Редактировать квиз
+const updateQuiz = async (req, res) => {
+    try {
+        const { quizId } = req.params;
+        const { title, description, time_limit_seconds, status } = req.body;
+
+        if (!title || !title.trim() ||
+            !Number.isInteger(time_limit_seconds) || time_limit_seconds <= 0 ||
+            !['draft', 'published', 'archived'].includes(status)) {
+            return res.status(400).json({
+                message: 'Проверьте правильность заполнения полей'
+            });
+        }
+
+        const result = await pool.query(
+            `UPDATE quizzes
+             SET title = $1,
+                 description = $2,
+                 time_limit_seconds = $3,
+                 status = $4
+             WHERE id = $5
+             RETURNING *`,
+            [title.trim(), description || null, time_limit_seconds, status, quizId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: 'Квиз не найден'
+            });
+        }
+
+        res.json(result.rows[0]);
+    } catch (error) {
+        console.error('Ошибка редактирования квиза:', error.message);
+
+        res.status(500).json({
+            message: 'Не удалось изменить квиз'
+        });
+    }
+};
+
+// Удалить квиз
+const deleteQuiz = async (req, res) => {
+    try {
+        const { quizId } = req.params;
+
+        const result = await pool.query(
+            `DELETE FROM quizzes
+             WHERE id = $1
+             RETURNING id`,
+            [quizId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: 'Квиз не найден'
+            });
+        }
+
+        res.json({
+            message: 'Квиз успешно удалён'
+        });
+    } catch (error) {
+        console.error('Ошибка удаления квиза:', error.message);
+
+        res.status(500).json({
+            message: 'Не удалось удалить квиз'
+        });
     }
 };
 
 module.exports = {
     getQuizzes,
-    createQuiz
+    createQuiz,
+    updateQuiz,
+    deleteQuiz
 };
