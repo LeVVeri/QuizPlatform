@@ -273,9 +273,79 @@ const finishAttempt = async (req, res) => {
     }
 };
 
+// Получить историю попыток пользователя
+const getAttemptHistory = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        await pool.query(
+            `UPDATE attempts
+            SET status = 'expired'
+            WHERE user_id = $1
+                AND status = 'in_progress'
+                AND expires_at <= NOW()`,
+            [userId]
+        );
+
+        const result = await pool.query(
+            `SELECT
+                a.id,
+                a.quiz_id,
+                q.title AS quiz_title,
+                a.score,
+                a.status,
+                a.started_at,
+                a.submitted_at
+             FROM attempts a
+             JOIN quizzes q ON q.id = a.quiz_id
+             WHERE a.user_id = $1
+             ORDER BY a.started_at DESC`,
+            [userId]
+        );
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения истории попыток:', error);
+        res.status(500).json({
+            message: 'Ошибка получения истории попыток'
+        });
+    }
+};
+
+// Получить рейтинг участников квиза
+const getLeaderboard = async (req, res) => {
+    try {
+        const { quizId } = req.params;
+
+        const result = await pool.query(
+            `SELECT
+                u.id AS user_id,
+                u.username,
+                MAX(a.score) AS best_score
+             FROM attempts a
+             JOIN users u ON u.id = a.user_id
+             WHERE a.quiz_id = $1
+               AND a.status = 'completed'
+             GROUP BY u.id, u.username
+             ORDER BY best_score DESC`,
+            [quizId]
+        );
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения рейтинга:', error.message);
+
+        res.status(500).json({
+            message: 'Не удалось получить рейтинг'
+        });
+    }
+};
+
 module.exports = {
     startAttempt,
     getAttemptQuestions,
     submitAnswer,
-    finishAttempt
+    finishAttempt,
+    getAttemptHistory,
+    getLeaderboard
 };
