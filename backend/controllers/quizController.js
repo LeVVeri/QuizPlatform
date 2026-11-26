@@ -163,8 +163,30 @@ const deleteQuiz = async (req, res) => {
     }
 };
 
+// Получить черновики текущего пользователя
+const getMyDrafts = async (req, res) => {
+    try {
+        const result = await pool.query(
+            `SELECT id, title, description, time_limit_seconds, status, created_at
+             FROM quizzes
+             WHERE creator_id = $1 AND status = 'draft'
+             ORDER BY created_at DESC`,
+            [req.user.id]
+        );
+
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Ошибка получения черновиков:', error.message);
+
+        res.status(500).json({
+            message: 'Не удалось получить черновики'
+        });
+    }
+};
+
 module.exports = {
     getQuizzes,
+    getMyDrafts,
     createQuiz,
     updateQuiz,
     deleteQuiz
