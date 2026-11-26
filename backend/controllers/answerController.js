@@ -6,15 +6,18 @@ const getAnswers = async (req, res) => {
         const { questionId } = req.params;
 
         const result = await pool.query(
-            `SELECT ao.id, ao.question_id, ao.text, ao.is_correct, ao.position
+            `SELECT
+                ao.id,
+                ao.question_id,
+                ao.text,
+                ao.is_correct,
+                ao.position
              FROM answer_options ao
              JOIN questions q ON q.id = ao.question_id
              JOIN quizzes quiz ON quiz.id = q.quiz_id
              WHERE q.id = $1
-               AND (
-                   quiz.status = 'published'
-                   OR quiz.creator_id = $2
-               )
+               AND quiz.creator_id = $2
+               AND quiz.status = 'draft'
              ORDER BY ao.position`,
             [questionId, req.user.id]
         );

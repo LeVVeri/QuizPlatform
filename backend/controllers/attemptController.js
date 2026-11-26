@@ -237,7 +237,6 @@ const finishAttempt = async (req, res) => {
         client = await pool.connect();
         await client.query('BEGIN');
 
-        // Блокируем попытку до завершения транзакции
         const attemptResult = await client.query(
             `SELECT id, quiz_id, expires_at, status
              FROM attempts
@@ -264,20 +263,7 @@ const finishAttempt = async (req, res) => {
             });
         }
 
-        if (new Date(attempt.expires_at) <= new Date()) {
-            await client.query(
-                `UPDATE attempts
-                 SET status = 'expired'
-                 WHERE id = $1`,
-                [attemptId]
-            );
-
-            await client.query('COMMIT');
-
-            return res.status(400).json({
-                message: 'Время попытки истекло'
-            });
-        }
+        const isExpired = new Date(attempt.expires_at) <= new Date();
 
         // Подсчитываем баллы за правильные ответы
         const scoreResult = await client.query(
@@ -294,23 +280,30 @@ const finishAttempt = async (req, res) => {
 
         const score = Number(scoreResult.rows[0].score);
 
-        // Сохраняем результат
+        // Сохраняем результат независимо от причины завершения
         const result = await client.query(
             `UPDATE attempts
              SET score = $1,
-                 status = 'completed',
+                 status = $2,
                  submitted_at = NOW()
-             WHERE id = $2
+             WHERE id = $3
              RETURNING id, score, status, submitted_at`,
-            [score, attemptId]
+            [
+                score,
+                isExpired ? 'expired' : 'completed',
+                attemptId
+            ]
         );
 
         await client.query('COMMIT');
 
-        res.json({
-            message: 'Попытка успешно завершена',
+        return res.json({
+            message: isExpired
+                ? 'Время истекло. Результат сохранён'
+                : 'Попытка успешно завершена',
             result: result.rows[0]
         });
+
     } catch (error) {
         if (client) {
             await client.query('ROLLBACK');
@@ -318,7 +311,7 @@ const finishAttempt = async (req, res) => {
 
         console.error('Ошибка завершения попытки:', error.message);
 
-        res.status(500).json({
+        return res.status(500).json({
             message: 'Не удалось завершить попытку'
         });
     } finally {
@@ -333,14 +326,36 @@ const getAttemptHistory = async (req, res) => {
     try {
         const userId = req.user.id;
 
-        await pool.query(
-            `UPDATE attempts
-            SET status = 'expired'
-            WHERE user_id = $1
-                AND status = 'in_progress'
-                AND expires_at <= NOW()`,
+        // Находим просроченные попытки
+        const expiredResult = await pool.query(
+            `SELECT id
+             FROM attempts
+             WHERE user_id = $1
+               AND status = 'in_progress'
+               AND expires_at <= NOW()`,
             [userId]
         );
+
+        // Завершаем каждую просроченную попытку
+        for (const attempt of expiredResult.rows) {
+            await pool.query(
+                `UPDATE attempts
+                 SET score = (
+                     SELECT COALESCE(SUM(q.points), 0)
+                     FROM attempt_answers aa
+                     JOIN questions q ON q.id = aa.question_id
+                     JOIN answer_options ao
+                       ON ao.id = aa.selected_option_id
+                      AND ao.question_id = q.id
+                     WHERE aa.attempt_id = $1
+                       AND ao.is_correct = TRUE
+                 ),
+                 status = 'expired',
+                 submitted_at = NOW()
+                 WHERE id = $1`,
+                [attempt.id]
+            );
+        }
 
         const result = await pool.query(
             `SELECT
@@ -360,7 +375,8 @@ const getAttemptHistory = async (req, res) => {
 
         res.json(result.rows);
     } catch (error) {
-        console.error('Ошибка получения истории попыток:', error);
+        console.error('Ошибка получения истории попыток:', error.message);
+
         res.status(500).json({
             message: 'Ошибка получения истории попыток'
         });
@@ -380,7 +396,7 @@ const getLeaderboard = async (req, res) => {
              FROM attempts a
              JOIN users u ON u.id = a.user_id
              WHERE a.quiz_id = $1
-               AND a.status = 'completed'
+               AND a.status IN ('completed', 'expired')
              GROUP BY u.id, u.username
              ORDER BY best_score DESC`,
             [quizId]
