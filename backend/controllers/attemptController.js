@@ -98,16 +98,20 @@ const getAttemptQuestions = async (req, res) => {
         // Получаем вопросы и варианты ответов без правильных ответов
         const result = await pool.query(
             `SELECT
-                q.id AS question_id,
-                q.text AS question_text,
-                q.points,
-                ao.id AS answer_id,
-                ao.text AS answer_text
+                 q.id AS question_id,
+                 q.text AS question_text,
+                 q.points,
+                 ao.id AS answer_id,
+                 ao.text AS answer_text,
+                 aa.selected_option_id
              FROM questions q
              LEFT JOIN answer_options ao ON ao.question_id = q.id
+             LEFT JOIN attempt_answers aa
+                 ON aa.question_id = q.id
+                 AND aa.attempt_id = $2
              WHERE q.quiz_id = $1
              ORDER BY q.position, ao.position`,
-            [attempt.quiz_id]
+            [attempt.quiz_id, attemptId]
         );
 
         res.json(result.rows);

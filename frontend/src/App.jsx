@@ -1,122 +1,152 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useState } from 'react';
+import { Link, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
+import { apiRequest } from './api';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Quiz from './pages/Quiz';
+import History from './pages/History';
+import Leaderboard from './pages/Leaderboard';
+import CreateQuiz from './pages/CreateQuiz';
+import MyDrafts from './pages/MyDrafts';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+function Home() {
+    const { user } = useAuth();
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    const [quizzes, setQuizzes] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const fetchQuizzes = async () => {
+            try {
+                const data = await apiRequest('/quizzes');
+                setQuizzes(data);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchQuizzes();
+    }, []);
+
+    return (
+        <div className="home">
+            <h1>Онлайн-квизы</h1>
+            <p className="home-description">
+                Список доступных квизов и проверка знаний.
+            </p>
+
+            <section className="quizzes">
+                <h2>Доступные квизы</h2>
+
+                {loading && <p>Загрузка...</p>}
+                {error && <p className="error">{error}</p>}
+
+                {!loading && !error && quizzes.length === 0 && (
+                    <p>Опубликованных квизов пока нет.</p>
+                )}
+
+                <div className="quiz-list">
+                    {quizzes.map((quiz) => (
+                        <article className="quiz-card" key={quiz.id}>
+                            <h3>{quiz.title}</h3>
+                            <p>{quiz.description || 'Описание отсутствует.'}</p>
+                            <span>
+                                Время: {Math.ceil(quiz.time_limit_seconds / 60)} мин.
+                            </span>
+
+                            <Link
+                                to={`/quiz/${quiz.id}`}
+                                className="button button-primary"
+                            >
+                                Начать
+                            </Link>
+
+                            {user && (
+                                <Link
+                                    to={`/leaderboard/${quiz.id}`}
+                                    className="button button-outline"
+                                >
+                                    Рейтинг
+                                </Link>
+                            )}
+                        </article>
+                    ))}
+                </div>
+            </section>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    );
 }
 
-export default App
+function App() {
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+
+    const handleLogout = () => {
+        logout();
+        navigate('/');
+    };
+
+    return (
+        <div className="app">
+            <header className="header">
+                <div className="container header-content">
+                    <Link to="/" className="logo">QuizPlatform</Link>
+
+                    <div className="auth-buttons">
+                        {user ? (
+                            <>
+                                <Link to="/my-drafts" className="button button-outline">
+                                    Мои черновики
+                                </Link>
+                                <Link to="/create-quiz" className="button button-outline">
+                                    Создать квиз
+                                </Link>
+                                <Link to="/history" className="button button-outline">
+                                    История
+                                </Link>
+
+                                <span>{user.username}</span>
+                                <button
+                                    className="button button-outline"
+                                    onClick={handleLogout}
+                                >
+                                    Выйти
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <Link to="/login" className="button button-outline">
+                                    Войти
+                                </Link>
+                                <Link to="/register" className="button button-primary">
+                                    Регистрация
+                                </Link>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            <main className="container">
+                <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
+                    <Route path="/quiz/:quizId" element={<Quiz />} />
+                    <Route path="/history" element={<History />} />
+                    <Route path="/leaderboard/:quizId" element={<Leaderboard />} />
+                    <Route path="/create-quiz" element={user ? <CreateQuiz /> : <Navigate to="/login" />} />
+                    <Route path="/create-quiz/:quizId" element={user ? <CreateQuiz /> : <Navigate to="/login" />} />
+                    <Route path="/my-drafts" element={user ? <MyDrafts /> : <Navigate to="/login" />} />
+                </Routes>
+            </main>
+        </div>
+    );
+}
+
+export default App;
